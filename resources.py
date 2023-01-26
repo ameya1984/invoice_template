@@ -1,8 +1,10 @@
 from flask_restful import reqparse, abort, Resource, marshal_with, fields
 from models import Invoice, InvoiceItem
 from db import get_session, logger
-from flask import request
+from flask import request, jsonify
 from sqlalchemy.exc import SQLAlchemyError
+from flask_jwt_extended import jwt_required, create_access_token
+
 
 session = get_session()
 
@@ -19,6 +21,8 @@ InvoiceAPIfields = {
 
 
 class InvoiceGetAPI(Resource):
+    method_decorators = [jwt_required()]
+
     @marshal_with(InvoiceAPIfields)
     def get(self, invoice_id):
         try:
@@ -31,6 +35,8 @@ class InvoiceGetAPI(Resource):
 
 
 class InvoicePostAPI(Resource):
+    method_decorators = [jwt_required()]
+
     def post(self):
         json_data = request.get_json(force=True)
         invoice = Invoice(date=json_data["date"])
@@ -40,6 +46,8 @@ class InvoicePostAPI(Resource):
 
 
 class InvoiceItemGetAPI(Resource):
+    method_decorators = [jwt_required()]
+
     @marshal_with(InvoiceItemAPIFields)
     def get(self, invoice_item_id):
         try:
@@ -53,6 +61,8 @@ class InvoiceItemGetAPI(Resource):
 
 
 class InvoiceItemPostAPI(Resource):
+    method_decorators = [jwt_required()]
+
     def post(self):
         parser = reqparse.RequestParser()
         parser.add_argument("units", type=int, required=True)
@@ -67,3 +77,20 @@ class InvoiceItemPostAPI(Resource):
         session.add(invoice_item)
         session.commit()
         return
+
+
+class Login(Resource):
+    def post(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument("username", type=str, required=True, help="username is missing")
+        parser.add_argument("password", type=str, required=True, help="password is missing")
+        args = parser.parse_args()
+
+        username, password = args['username'], args['password']
+        if username != 'invoice_app':
+            abort(401, message="Invalid Username")
+        if password != 'invoice_app':
+            abort(401, message="Invalid Username")
+
+        access_token = create_access_token(identity=username)
+        return jsonify(access_token=access_token)
