@@ -8,15 +8,25 @@ from flask_jwt_extended import jwt_required, create_access_token
 
 session = get_session()
 
-InvoiceItemAPIFields = {
+ItemAPIFields = {
+    'id': fields.Integer,
     'units': fields.Integer,
     'description': fields.String,
-    'amount': fields.Float
+    'amount': fields.Float,
+    'invoice': fields.Integer
+}
+
+InvoiceItemAPIFields = {
+    'id': fields.Integer,
+    'units': fields.Integer,
+    'description': fields.String,
+    'amount': fields.Float,
 }
 
 InvoiceAPIfields = {
+    'id': fields.Integer,
     'date': fields.String,
-    'invoice_items': fields.List(fields.Nested(InvoiceItemAPIFields))
+    'items': fields.List(fields.Nested(InvoiceItemAPIFields))
 }
 
 
@@ -31,52 +41,113 @@ class InvoiceGetAPI(Resource):
             message = "Invoice {} doesn't exist".format(invoice_id)
             logger.error(message)
             abort(404, message=message)
-        return invoice
+        return {
+            'id': invoice.id,
+            'date': invoice.date,
+            'items': [
+                {'id': item.id, 'units': item.units, 'amount': item.amount, 'description': item.description}
+                for item in invoice.items]
+        }
 
 
-class InvoicePostAPI(Resource):
+class InvoiceAPI(Resource):
     method_decorators = [jwt_required()]
 
+    @marshal_with(InvoiceAPIfields)
+    def get(self):
+        invoice_id = request.args['id']
+        try:
+            invoice = session.query(Invoice).filter(Invoice.id == invoice_id).one()
+        except SQLAlchemyError as e:
+            message = "Invoice {} doesn't exist".format(invoice_id)
+            logger.error(message)
+            abort(404, message=message)
+        return {
+            'id': invoice.id,
+            'date': invoice.date,
+            'items': [
+                {'id': item.id, 'units': item.units, 'amount': item.amount, 'description': item.description}
+                for item in invoice.items]
+        }
+
+    @marshal_with(InvoiceAPIfields)
     def post(self):
         json_data = request.get_json(force=True)
-        invoice = Invoice(date=json_data["date"])
+        date = json_data.get("date")
+        invoice = Invoice(
+            date=date
+        )
+        for item in json_data.get("items"):
+            invoice_item = InvoiceItem(
+                units=item["units"],
+                description=item["description"],
+                amount=item["amount"],
+                invoice=invoice
+            )
+            invoice.items.append(invoice_item)
+
         session.add(invoice)
         session.commit()
-        return {"invoice_id": invoice.id}, 201
+        return {
+            'id': invoice.id,
+            'date': invoice.date,
+            'items': [
+                {'id': item.id, 'units': item.units, 'amount': item.amount, 'description': item.description}
+                for item in invoice.items]
+        }
 
 
 class InvoiceItemGetAPI(Resource):
     method_decorators = [jwt_required()]
 
-    @marshal_with(InvoiceItemAPIFields)
-    def get(self, invoice_item_id):
+    @marshal_with(ItemAPIFields)
+    def get(self, item_id):
         try:
-            invoice_item = session.query(InvoiceItem).filter(InvoiceItem.id == invoice_item_id).one()
+            item = session.query(InvoiceItem).filter(InvoiceItem.id == item_id).one()
         except SQLAlchemyError as e:
-            message = "Invoice Item {} doesn't exist".format(invoice_item_id)
+            message = "Invoice Item {} doesn't exist".format(item_id)
             logger.error(message)
             abort(404, message=message)
 
-        return invoice_item
+        return {'id': item.id, 'units': item.units, 'amount': item.amount, 'description': item.description, 'invoice': item.invoice.id}
 
 
-class InvoiceItemPostAPI(Resource):
+class InvoiceItemAPI(Resource):
     method_decorators = [jwt_required()]
 
+    @marshal_with(ItemAPIFields)
+    def get(self):
+        item_id = request.args['id']
+
+        try:
+            item = session.query(InvoiceItem).filter(InvoiceItem.id == item_id).one()
+        except SQLAlchemyError as e:
+            message = "Invoice Item {} doesn't exist".format(item_id)
+            logger.error(message)
+            abort(404, message=message)
+
+        return {'id': item.id, 'units': item.units, 'amount': item.amount, 'description': item.description, 'invoice': item.invoice.id}
+
+    @marshal_with(ItemAPIFields)
     def post(self):
-        parser = reqparse.RequestParser()
-        parser.add_argument("units", type=int, required=True)
-        parser.add_argument("description", type=str)
-        parser.add_argument("amount", type=float, required=True)
-        args = parser.parse_args()
-        invoice_item = InvoiceItem(
-            units=args["units"],
-            description=args["description"],
-            amount=args["amount"]
+        json_data = request.get_json(force=True)
+        try:
+            invoice = session.query(Invoice).filter(Invoice.id == json_data["invoice_id"]).one()
+        except SQLAlchemyError as e:
+            message = "Invoice {} doesn't exist".format(json_data["invoice_id"])
+            logger.error(message)
+            abort(404, message=message)
+
+        item = InvoiceItem(
+            units=json_data["units"],
+            description=json_data["description"],
+            amount=json_data["amount"],
+            invoice=invoice
         )
-        session.add(invoice_item)
+        invoice.items.append(item)
+        session.add_all([invoice, item])
         session.commit()
-        return
+        return {'id': item.id, 'units': item.units, 'amount': item.amount, 'description': item.description, 'invoice': item.invoice.id}
 
 
 class Login(Resource):
