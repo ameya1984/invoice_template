@@ -4,7 +4,7 @@ from db import get_session, logger
 from flask import request, jsonify
 from sqlalchemy.exc import SQLAlchemyError
 from flask_jwt_extended import jwt_required, create_access_token
-
+from datetime import timedelta
 
 session = get_session()
 
@@ -163,5 +163,5 @@ class Login(Resource):
         if password != 'invoice_app':
             abort(401, message="Invalid Username")
 
-        access_token = create_access_token(identity=username)
+        access_token = create_access_token(identity=username, expires_delta=timedelta(hours=1))
         return jsonify(access_token=access_token)
